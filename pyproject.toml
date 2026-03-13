@@ -1,0 +1,10 @@
+[project]
+name = "robot-simulation"
+version = "0.1.0"
+description = "机器人建模与控制仿真"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "scipy",
+]
