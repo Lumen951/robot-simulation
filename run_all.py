@@ -203,6 +203,67 @@ def run_interactive_jacobian(out_dir):
             print(f'  -> {os.path.join(out_dir, fname)}')
 
 
+def run_puma560_trajectory(out_dir):
+    """puma560轨迹规划：运行直线和圆形轨迹，保存静态图。"""
+    ensure_dir(out_dir)
+
+    spec = importlib.util.spec_from_file_location(
+        "_puma_traj", os.path.join(SRC_DIR, 'puma560-轨迹规划.py'))
+    mod = importlib.util.module_from_spec(spec)
+
+    original_show = plt.show
+    plt.show = lambda *a, **kw: None
+    old_stdout = sys.stdout
+    sys.stdout = buffer = io.StringIO()
+
+    try:
+        spec.loader.exec_module(mod)
+        robot = mod.Puma560Trajectory()
+
+        # 打印变换矩阵和雅可比
+        test_joints = [30, 45, 30, 0, 0, 0]
+        robot.print_transforms(test_joints)
+        J = robot.jacobian(test_joints)
+        print(f"\n雅可比矩阵 (位形 {test_joints}):")
+        print(np.array2string(J, precision=4, suppress_small=True))
+
+        # 直线轨迹
+        start = np.array([0.5, 0.3, 0.6])
+        end = np.array([0.4, -0.2, 0.75])
+        lp, lj = robot.plan_line(start, end, n=100)
+        if lj:
+            plt.close('all')
+            robot.plot_joint_curves(lj, "直线轨迹 - 关节角度变化")
+            save_figures(out_dir, prefix='fig_直线_关节角度')
+            plt.close('all')
+            robot.plot_manipulability(lj, "直线轨迹 - 可操作度变化")
+            save_figures(out_dir, prefix='fig_直线_可操作度')
+
+        # 圆形轨迹
+        center = np.array([0.4, 0, 0.65])
+        cp, cj = robot.plan_circle(center, 0.12, n=100)
+        if cj:
+            plt.close('all')
+            robot.plot_joint_curves(cj, "圆形轨迹 - 关节角度变化")
+            save_figures(out_dir, prefix='fig_圆形_关节角度')
+            plt.close('all')
+            robot.plot_manipulability(cj, "圆形轨迹 - 可操作度变化")
+            save_figures(out_dir, prefix='fig_圆形_可操作度')
+    finally:
+        plt.show = original_show
+        sys.stdout = old_stdout
+
+    text = buffer.getvalue()
+    if text.strip():
+        with open(os.path.join(out_dir, 'output.txt'), 'w', encoding='utf-8') as f:
+            f.write(text)
+        print(f'  -> {os.path.join(out_dir, "output.txt")}')
+
+    for fname in sorted(os.listdir(out_dir)):
+        if fname.endswith('.png'):
+            print(f'  -> {os.path.join(out_dir, fname)}')
+
+
 def main():
     print('=' * 60)
     print('批量运行 src/ 脚本，输出保存到 output/')
@@ -245,6 +306,12 @@ def main():
     print(f'\n[运行] 雅可比矩阵 (3组角度)')
     try:
         run_interactive_jacobian(os.path.join(OUTPUT_DIR, '雅可比矩阵'))
+    except Exception as e:
+        print(f'  !! 错误: {e}')
+
+    print(f'\n[运行] puma560-轨迹规划 (直线+圆形轨迹)')
+    try:
+        run_puma560_trajectory(os.path.join(OUTPUT_DIR, 'puma560-轨迹规划'))
     except Exception as e:
         print(f'  !! 错误: {e}')
 
