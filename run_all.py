@@ -264,6 +264,71 @@ def run_puma560_trajectory(out_dir):
             print(f'  -> {os.path.join(out_dir, fname)}')
 
 
+def run_ur3e_simulation(out_dir):
+    """UR3e简化模型仿真：圆形轨迹+动画+动力学"""
+    ensure_dir(out_dir)
+
+    spec = importlib.util.spec_from_file_location(
+        "_ur3e", os.path.join(SRC_DIR, 'ur3e-简化模型仿真.py'))
+    mod = importlib.util.module_from_spec(spec)
+
+    original_show = plt.show
+    plt.show = lambda *a, **kw: None
+    old_stdout = sys.stdout
+    sys.stdout = buffer = io.StringIO()
+
+    try:
+        spec.loader.exec_module(mod)
+        robot = mod.UR3eRobot()
+
+        # 打印DH参数
+        print("\nUR3e DH参数表:")
+        print(f"{'关节':<6} {'θ(rad)':<10} {'d(m)':<10} {'a(m)':<10} {'α(rad)':<10}")
+        print("-" * 50)
+        for i in range(6):
+            print(f"J{i+1:<5} {'q'+str(i+1):<10} {robot.d[i]:<10.5f} "
+                  f"{robot.a[i]:<10.5f} {robot.alpha[i]:<10.4f}")
+
+        # 测试正运动学
+        test_joints = [0, -90, 90, 0, 0, 0]
+        positions, T_end = robot.forward_kinematics(test_joints)
+        print(f"\n测试位形 {test_joints} (度):")
+        print(f"末端位置: x={T_end[0,3]:.4f}, y={T_end[1,3]:.4f}, z={T_end[2,3]:.4f} 米")
+
+        # 圆形轨迹规划
+        center = [-0.2, -0.15, 0.35]
+        radius = 0.05  # 10cm直径
+        print(f"\n圆形轨迹规划 (XY平面, 直径10cm)")
+        print(f"圆心: {center}, 半径: {radius*100:.1f} cm")
+
+        path_xyz, joints_list = robot.plan_circle(center, radius, n=100, plane='xy')
+
+        if len(joints_list) > 0:
+            # 关节角度曲线
+            plt.close('all')
+            robot.plot_joint_curves(joints_list, "圆形轨迹 - 关节角度变化")
+            save_figures(out_dir, prefix='fig_关节角度')
+
+            # 力矩计算
+            torques = robot.compute_torques_simple(joints_list)
+            plt.close('all')
+            robot.plot_torques(torques, "圆形轨迹 - 关节力矩变化")
+            save_figures(out_dir, prefix='fig_力矩变化')
+    finally:
+        plt.show = original_show
+        sys.stdout = old_stdout
+
+    text = buffer.getvalue()
+    if text.strip():
+        with open(os.path.join(out_dir, 'output.txt'), 'w', encoding='utf-8') as f:
+            f.write(text)
+        print(f'  -> {os.path.join(out_dir, "output.txt")}')
+
+    for fname in sorted(os.listdir(out_dir)):
+        if fname.endswith('.png'):
+            print(f'  -> {os.path.join(out_dir, fname)}')
+
+
 def main():
     print('=' * 60)
     print('批量运行 src/ 脚本，输出保存到 output/')
@@ -312,6 +377,12 @@ def main():
     print(f'\n[运行] puma560-轨迹规划 (直线+圆形轨迹)')
     try:
         run_puma560_trajectory(os.path.join(OUTPUT_DIR, 'puma560-轨迹规划'))
+    except Exception as e:
+        print(f'  !! 错误: {e}')
+
+    print(f'\n[运行] ur3e-简化模型仿真 (圆形轨迹+动力学)')
+    try:
+        run_ur3e_simulation(os.path.join(OUTPUT_DIR, 'ur3e-简化模型仿真'))
     except Exception as e:
         print(f'  !! 错误: {e}')
 
